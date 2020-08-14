@@ -7,7 +7,6 @@ class Generator:
 		for x in range(0, depth):
 			# n is new nodes being added to this layer
 			n = 2 ** x
-			print('adding nodes : ', n)
 			g.add_nodes(n)
 			#skip for the root
 			if n != 1:
@@ -43,6 +42,13 @@ class Generator:
 	# use np.random.choice to decide the probability 
 	def generate_erdos_renyi(n, p):
 		g = Graph(n)
+		# get the lower triangle of the adjacency matrix and decide with a particular probability to add edges or not
+		v = np.array([np.random.choice([0, 1], p = [0.5, 0.5]) for xi in g.adj[np.triu_indices(n, k = 1)]])
+		g.adj = np.zeros((n, n))
+		g.adj[np.triu_indices(n, k = 1)] = v
+		g.adj = g.adj + g.adj.T
+		g.update_attributes()
+		return g
 
 
 # assuming undirected, for now 
@@ -52,8 +58,6 @@ class Graph:
 	def __init__(self, size):	
 		self.adj = np.zeros((size or 0, size or 0))
 		num_rows = self.adj.shape[0] 
-		self.nodes = num_rows
-		self.edges = 0 
 		self.update_attributes()
 
 	def add_nodes(self, count):
@@ -62,7 +66,6 @@ class Graph:
 		b = np.zeros((num_rows + count, num_rows + count))
 		b[:num_rows, :num_rows] = self.adj
 		self.adj = b
-		self.nodes += count 
 		self.update_attributes()
 
 	def add_edge(self, nodes):
@@ -70,14 +73,12 @@ class Graph:
 			self.adj[nodes[0], nodes[1]] = 1
 			#to maintain symmettry
 			self.adj[nodes[1], nodes[0]] = 1
-			self.edges += 1 
 			self.update_attributes()
 
 	# fills all of the adj matrix with 1s (except diagonal)
 	def make_complete(self):
 		self.adj.fill(1)
 		np.fill_diagonal(self.adj, 0)
-		self.edges = int((self.nodes * (self.nodes - 1)) / 2)
 		self.update_attributes()
 
 	#https://en.wikipedia.org/wiki/Eigenvector_centrality
@@ -172,11 +173,17 @@ class Graph:
 	def degree_dist(self, k):
 		return (self.degree == k).sum() / self.degree.shape[0]
 
+	# only works for graphs which are symmetric with an all zero diag (no looping)
 	def update_attributes(self):
+		# extract upper triangle of adjacency matrix 
+		flat = self.adj[np.triu_indices(self.adj.shape[0], k = 1)].flatten()
+		unique, counts = np.unique(flat, return_counts=True)
+		self.edges = dict(zip(unique, counts)).get(1.0, 0)
+		self.nodes = self.adj.shape[0]
 		self.degree = self.adj.sum(axis = 0)
 
 
-g = Generator.generate_tree(10)
+g = Generator.generate_complete(11)
 print(g.eigenvector_centrality())
 print('has cycle : ', g.has_cycle())
 print('spanning trees : ', g.spanning_trees())
