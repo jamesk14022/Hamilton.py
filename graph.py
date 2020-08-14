@@ -40,10 +40,10 @@ class Generator:
 
 	# generating the G(n, p) form of a er graph
 	# use np.random.choice to decide the probability 
-	def generate_erdos_renyi(n, p):
+	def generate_er_graph(n, p):
 		g = Graph(n)
 		# get the lower triangle of the adjacency matrix and decide with a particular probability to add edges or not
-		v = np.array([np.random.choice([0, 1], p = [0.5, 0.5]) for xi in g.adj[np.triu_indices(n, k = 1)]])
+		v = np.array([np.random.choice([1, 0], p = [p, 1 - p]) for xi in g.adj[np.triu_indices(n, k = 1)]])
 		g.adj = np.zeros((n, n))
 		g.adj[np.triu_indices(n, k = 1)] = v
 		g.adj = g.adj + g.adj.T
@@ -151,6 +151,17 @@ class Graph:
 						visited.append(it.index)
 		return len(visited) == self.nodes 
 
+	# this method only works for undirected graphs
+	# https://math.stackexchange.com/questions/2133814/calculation-transitivity-of-a-graph-from-the-adj-matrix
+	# https://en.wikipedia.org/wiki/Clustering_coefficient#cite_note-4
+	# binary global clustering coefficient 
+	def global_clustering_coeff(self):
+		# calculate number of closed triplets (or 3 times triangles)
+		cldtrip = (np.trace(np.linalg.matrix_power(self.adj, 3))) / 2
+		#calculate total number of triplets, total number of triplets (both open and closed).
+		triples = ((np.linalg.matrix_power(self.adj, 2)).sum() - np.trace(np.linalg.matrix_power(self.adj, 2))) / 2 
+		return cldtrip / triples
+
 	def is_regular(self):
 		return len(set(self.degree)) == 1
 
@@ -183,7 +194,14 @@ class Graph:
 		self.degree = self.adj.sum(axis = 0)
 
 
-g = Generator.generate_complete(11)
+g = Graph(6)
+g.add_edge((0, 1))
+g.add_edge((0, 2))
+g.add_edge((1, 2))
+g.add_edge((1, 3))
+g.add_edge((1, 4))
+g.add_edge((4, 5))
+
 print(g.eigenvector_centrality())
 print('has cycle : ', g.has_cycle())
 print('spanning trees : ', g.spanning_trees())
@@ -191,6 +209,7 @@ print('probability of randomly selecting a node with degree = 0 is ', g.degree_d
 print('NODES', g.nodes)
 print('EDGES', g.edges)
 print(g.adj)
+print('The global clustering coeff is ', g.global_clustering_coeff())
 print('this graph is regular : ', g.is_regular())
 print('the degrees of nodes are ', g.degree)
 print('connected ', g.is_connected(0))
