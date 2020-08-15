@@ -33,6 +33,80 @@ class Generator:
 		g.add_edge((n - 1, 0))
 		return g
 
+	# start with 3 nodes and two edges
+	# https://web.archive.org/web/20150824235818/http://www3.nd.edu/~networks/Publication%20Categories/03%20Journal%20Articles/Physics/StatisticalMechanics_Rev%20of%20Modern%20Physics%2074,%2047%20(2002).pdf 
+	# (p.71)
+	def generate_barabase_albert(mo = 3, m = 2, lim = 50):
+		g = Graph(mo)
+		g.add_edge((0,1))
+		g.add_edge((1,2))
+
+		while(g.nodes < lim):
+			g.add_nodes(1)
+			# possible partner nodes  
+			# g is minus 1 below to avoid choosing the node we just added to the graph 
+			partners = range(0, g.nodes - 1)
+			#probability of connecting to each of these partners
+			prob = []
+			for x in partners:
+				prob.append(g.degree[x] / (g.edges * 2))
+			# add m edges to separate existing nodes
+			edg = np.random.choice(partners, m, replace = False, p = prob)
+			for i in edg:
+				g.add_edge((g.nodes - 1, i))
+		return g
+
+	#https://en.wikipedia.org/wiki/Watts%E2%80%93Strogatz_model
+	# the mean degree k is assumed to be an even integer
+	# b must be between 0 and 1 inclusive 
+	def generate_watts_strogatz(n, k = 4, b = 0.5):
+		g = Generator.generate_cycle(n)
+		# adding extra edges to the latice
+		if k > 2:	
+			for x in range(0, n):
+				# no error will be thrown if we add mulitple edges, it will remain a single edge
+				# number of edges to be added on each side of each node (minus 1 as we have already crated the cycle)
+				edg = int(k / 2) - 1
+				for i in range(0, edg):
+					# determine which other node to add the edge to
+					# specifically, what is the index step between the two nodes
+					step = 2 + i 
+					if x + step > g.nodes - 1:
+						# things get messier when adding edges at the end of the cycle
+						g.add_edge((x, x + step - g.nodes))
+					else:
+						g.add_edge((x, x + step))
+		# now, the rewiring stage
+		# iterate over each node and each right edge 
+		for x in range(0, n):
+			print(g.nodes)
+			for i in range(1, int(k / 2) + 1):
+				if np.random.choice([1, 0], 1, p = [b, 1 - b])[0] == 1:
+					if x + i > g.nodes - 1:
+						#remove edge being rewired 
+						g.remove_edge((x, x + i - g.nodes))
+						nodes = list(range(0, g.nodes))
+						nodes.remove(x)
+						icd = set(np.where(g.adj[x] == 1)[0])
+						poss = list(filter(lambda x: x not in icd, nodes))
+						# probability of choosing any of the k new edges
+						prob = [1 / len(poss)] * len(poss)
+						g.add_edge((x, np.random.choice(poss, 1, p = prob)[0]))						
+					else:	
+						#remove edge being rewired 
+						g.remove_edge((x, x + i))
+						nodes = list(range(0, g.nodes))
+						nodes.remove(x)
+						icd = set(np.where(g.adj[x] == 1)[0])
+						print(icd)
+						poss = list(filter(lambda x: x not in icd, nodes))
+						print(poss)
+						# probability of choosing any of the k new edges
+						prob = [1 / len(poss)] * len(poss)
+						g.add_edge((x, np.random.choice(poss, 1, p = prob)))
+		return g
+
+
 	def generate_complete(n):
 		g = Graph(n)
 		g.make_complete()
@@ -60,6 +134,29 @@ class Graph:
 		num_rows = self.adj.shape[0] 
 		self.update_attributes()
 
+	#dfs helper 
+	def dfs_bipartite_helper(self, v, discovered, colour):
+		# for every edge v -> u 
+		# vals of nodes which are adjacent to v
+		ind = np.where(self.adj[v] == 1)[0]
+		for x in ind:
+			if x not in discovered:
+				discovered.append(x)
+				colour[x] = not colour[v]
+				if not self.dfs_bipartite_helper(x, discovered, colour):
+					return False
+			elif colour[x] == colour[v]:
+				return False
+		return True 
+
+	# returns an array giving the average nearest neighbour degree for each node in a graph
+	# is the neighbourhood open or closed? I will assume open
+	def get_aand(self):
+		aand = {}
+		for x in range(0, self.nodes):
+			aand[x] = self.degree[np.where(self.adj[x] == 1)[0]].mean()
+		return aand
+
 	def add_nodes(self, count):
 		# will add a new row & column of zeroes to the adjacency matrix 
 		num_rows = self.adj.shape[0] 
@@ -71,9 +168,21 @@ class Graph:
 	def add_edge(self, nodes):
 		if len(nodes) == 2 and nodes[0] >= 0 and nodes[1] >= 0:
 			self.adj[nodes[0], nodes[1]] = 1
-			#to maintain symmettry
+			#to maintain symmetry
 			self.adj[nodes[1], nodes[0]] = 1
 			self.update_attributes()
+
+	def remove_edge(self, nodes):
+		if len(nodes) == 2:
+			if self.adj[nodes[0], nodes[1]] == 1:
+				self.adj[nodes[0], nodes[1]] = 0
+				#to maintain symmetry
+				self.adj[nodes[1], nodes[0]] = 0
+			else:
+				print('No edge to remove!') 
+			self.update_attributes()
+		else:
+			print('Please supply two nodes!')
 
 	# fills all of the adj matrix with 1s (except diagonal)
 	def make_complete(self):
@@ -107,34 +216,12 @@ class Graph:
 	#using depth first search to determine if a graph is bipartite
 	#if this returns false an odd cycle is implied
 	#come back to this, I need to understand the algo better before trying to implement
-	def is_bipartite(self, root):
+	def is_bipartite(self, root = 0):
 		if self.edges == 0:
 			return True
-		s = []
-		flag = True 
-		visited = []
-		colouring = {}
-		s.append(root)
-		visited.append(root)
-		print('visited ', root)
-		colouring[root] = 0
-		# root is zero and parent is -1 (doesnt exist for now)
-		v = None
-		while(len(s) > 0):
-			if v is None: 
-				p = -1
-			else:
-				p = v
-				v = s.pop()  
-				colouring[v] = 1 - colouring[p]			
-			it = np.nditer(self.adj[:,v], flags=['f_index'])
-			for x in it:
-				if x == 1 and it.index not in visited:
-					s.append(it.index)
-					visited.append(it.index)
-					print('visited ', it.index)
-		return colouring
-
+		discovered = [0]
+		colour = {0: True}
+		return self.dfs_bipartite_helper(root, discovered, colour)
 
 	# conduct a Depth first search, if the number of nodes found equals the number of nodes in the graph, the graph is connected
 	def is_connected(self, root):
@@ -194,22 +281,17 @@ class Graph:
 		self.degree = self.adj.sum(axis = 0)
 
 
-g = Graph(6)
-g.add_edge((0, 1))
-g.add_edge((0, 2))
-g.add_edge((1, 2))
-g.add_edge((1, 3))
-g.add_edge((1, 4))
-g.add_edge((4, 5))
-
-print(g.eigenvector_centrality())
+g = Generator.generate_watts_strogatz(50)
+print('egen centrality', g.eigenvector_centrality())
 print('has cycle : ', g.has_cycle())
 print('spanning trees : ', g.spanning_trees())
+print('aand : ', g.get_aand())
 print('probability of randomly selecting a node with degree = 0 is ', g.degree_dist(0))
 print('NODES', g.nodes)
 print('EDGES', g.edges)
 print(g.adj)
 print('The global clustering coeff is ', g.global_clustering_coeff())
+print('The graph is bipartite: ', g.is_bipartite())
 print('this graph is regular : ', g.is_regular())
 print('the degrees of nodes are ', g.degree)
 print('connected ', g.is_connected(0))
