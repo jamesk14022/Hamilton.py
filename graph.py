@@ -1,4 +1,49 @@
 import numpy as np
+from graphics import *
+
+class Visualise:
+	# draw a graph using the spectral layout
+	# https://en.wikipedia.org/wiki/Spectral_layout
+	def draw_spectral(g):
+		np.set_printoptions(precision=3)
+		L = g.get_laplace()
+		print('laplace is symmetric', (L.transpose() == L).all())
+		eigenvalue, eigenvector = np.linalg.eig(L)
+		# returns the indices of the two smallest eigenvalues
+		minind = np.argsort(eigenvalue)[1 : 3]
+		xeig = eigenvector[:,minind[0]]
+		print('values', eigenvalue)
+		print('vecotrs', eigenvector)
+		print('minind', minind)
+		yeig = eigenvector[:,minind[1]]
+		print('xeig', xeig)
+		print('yeig', yeig)
+		cords = {}
+		# record max cords val to set the cord max in graphics
+		maxc = max(max(xeig), max(yeig))
+		minc = min(min(xeig), min(yeig))
+		# create dict of x, y tuples to hold co-ordinates for each vertice
+		for x in range(0, g.nodes):
+			cords[x] = (xeig[x], yeig[x])
+
+		print('cords', cords)
+
+		win = GraphWin(width = 800, height = 800) # create a window
+		buffer = 1.05
+		win.setCoords(minc * buffer, minc * buffer, maxc * buffer, maxc * buffer) # set the coordinates of the window; bottom left is (0, 0) and top right is (10, 10)
+		# then add edges
+		ui =  np.triu_indices(g.nodes, k = 1)
+		for e in range(0, len(ui[0])):
+			if g.adj[ui[0][e], ui[1][e]] == 1:
+				l = Line(Point(cords[ui[0][e]][0], cords[ui[0][e]][1]), Point(cords[ui[1][e]][0], cords[ui[1][e]][1]))
+				l.draw(win)
+		# then, nodes
+		for i in cords:
+			c = Circle(Point(cords[i][0], cords[i][1]), maxc / 20)	
+			message = Text(Point(cords[i][0], cords[i][1]), i)
+			message.draw(win)
+			c.draw(win) 
+		win.getMouse() # pause before closing
 
 class Generator:
 	#generates a symmetric binary tree
@@ -59,7 +104,8 @@ class Generator:
 	#https://en.wikipedia.org/wiki/Watts%E2%80%93Strogatz_model
 	# the mean degree k is assumed to be an even integer
 	# b must be between 0 and 1 inclusive 
-	def generate_watts_strogatz(n, k = 4, b = 0.5):
+	# need to verify that this method is correct 
+	def generate_watts_strogatz(n, k = 4, b = 1):
 		g = Generator.generate_cycle(n)
 		# adding extra edges to the latice
 		if k > 2:	
@@ -79,7 +125,6 @@ class Generator:
 		# now, the rewiring stage
 		# iterate over each node and each right edge 
 		for x in range(0, n):
-			print(g.nodes)
 			for i in range(1, int(k / 2) + 1):
 				if np.random.choice([1, 0], 1, p = [b, 1 - b])[0] == 1:
 					if x + i > g.nodes - 1:
@@ -98,9 +143,7 @@ class Generator:
 						nodes = list(range(0, g.nodes))
 						nodes.remove(x)
 						icd = set(np.where(g.adj[x] == 1)[0])
-						print(icd)
 						poss = list(filter(lambda x: x not in icd, nodes))
-						print(poss)
 						# probability of choosing any of the k new edges
 						prob = [1 / len(poss)] * len(poss)
 						g.add_edge((x, np.random.choice(poss, 1, p = prob)))
@@ -114,7 +157,7 @@ class Generator:
 
 	# generating the G(n, p) form of a er graph
 	# use np.random.choice to decide the probability 
-	def generate_er_graph(n, p):
+	def generate_er_graph(n, p = 0.5):
 		g = Graph(n)
 		# get the lower triangle of the adjacency matrix and decide with a particular probability to add edges or not
 		v = np.array([np.random.choice([1, 0], p = [p, 1 - p]) for xi in g.adj[np.triu_indices(n, k = 1)]])
@@ -134,6 +177,12 @@ class Graph:
 		num_rows = self.adj.shape[0] 
 		self.update_attributes()
 
+	def get_laplace(self):
+		#first calculate the degree matrix 
+		D = np.diag(self.degree)
+		#find laplacian matrix
+		return D - self.adj		
+			
 	#dfs helper 
 	def dfs_bipartite_helper(self, v, discovered, colour):
 		# for every edge v -> u 
@@ -259,10 +308,7 @@ class Graph:
 	#uses kirchoffs thereom to calculate the number of spanning trees in a graph
 	#number of spanning trees equal to any cofactor of the laplacian
 	def spanning_trees(self):
-		#first calculate the degree matrix 
-		D = np.diag(self.degree)
-		#find laplacian matrix
-		L = D - self.adj
+		L = self.get_laplace()
 		Q = L[1:, 1:]
 		det = np.linalg.det(Q)
 		return det
@@ -281,7 +327,8 @@ class Graph:
 		self.degree = self.adj.sum(axis = 0)
 
 
-g = Generator.generate_watts_strogatz(50)
+g = Generator.generate_er_graph(100, p = 0.1)
+Visualise.draw_spectral(g)
 print('egen centrality', g.eigenvector_centrality())
 print('has cycle : ', g.has_cycle())
 print('spanning trees : ', g.spanning_trees())
@@ -289,7 +336,6 @@ print('aand : ', g.get_aand())
 print('probability of randomly selecting a node with degree = 0 is ', g.degree_dist(0))
 print('NODES', g.nodes)
 print('EDGES', g.edges)
-print(g.adj)
 print('The global clustering coeff is ', g.global_clustering_coeff())
 print('The graph is bipartite: ', g.is_bipartite())
 print('this graph is regular : ', g.is_regular())
