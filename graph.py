@@ -1,23 +1,36 @@
 import numpy as np
+import math
 from graphics import *
 
 class Visualise:
+	c1 = 2
+	c2 = 1
+	c3 = 2
+	c4 = 0.1 
+
+	# calculate the force on a vertex 
+	# use a logarithmic rather than linear scale
+	# returns the force
+	# where d is the distance between the two vertices
+	# it may be better to calculate d within the calculate method, let us wait and see
+	def spring_force(d):
+		return Visualise.c1 * math.log(d / Visualise.c2)
+
+	# use an inverse square law for the inverse force
+	# returns the force  
+	def repel_force(d):
+		return Visualise.c3 / (d**2)
+
 	# draw a graph using the spectral layout
 	# https://en.wikipedia.org/wiki/Spectral_layout
 	def draw_spectral(g):
 		np.set_printoptions(precision=3)
 		L = g.get_laplace()
-		print('laplace is symmetric', (L.transpose() == L).all())
 		eigenvalue, eigenvector = np.linalg.eig(L)
 		# returns the indices of the two smallest eigenvalues
 		minind = np.argsort(eigenvalue)[1 : 3]
 		xeig = eigenvector[:,minind[0]]
-		print('values', eigenvalue)
-		print('vecotrs', eigenvector)
-		print('minind', minind)
 		yeig = eigenvector[:,minind[1]]
-		print('xeig', xeig)
-		print('yeig', yeig)
 		cords = {}
 		# record max cords val to set the cord max in graphics
 		maxc = max(max(xeig), max(yeig))
@@ -25,9 +38,6 @@ class Visualise:
 		# create dict of x, y tuples to hold co-ordinates for each vertice
 		for x in range(0, g.nodes):
 			cords[x] = (xeig[x], yeig[x])
-
-		print('cords', cords)
-
 		win = GraphWin(width = 800, height = 800) # create a window
 		buffer = 1.05
 		win.setCoords(minc * buffer, minc * buffer, maxc * buffer, maxc * buffer) # set the coordinates of the window; bottom left is (0, 0) and top right is (10, 10)
@@ -44,6 +54,100 @@ class Visualise:
 			message.draw(win)
 			c.draw(win) 
 		win.getMouse() # pause before closing
+
+	# # draw a graph on graphics.py with the force directed layout
+	# # these can also be known as spring embedders
+	# # hookes law like forces between adjacent nodes, except on a logarithmic rather than linear scale 
+	# # we make non-adjacent vertices repel eachother with an inverse square law
+	# # http://cs.brown.edu/people/rtamassi/gdhandbook/chapters/force-directed.pdf
+	def draw_force(g):	
+		# create dict of x, y tuples to hold co-ordinates for each vertice
+		cords = {}
+		# first give all nodes random locations in our coord space 
+		for x in range(0, g.nodes):
+			rng = np.random.default_rng()
+			cords[x] = (rng.integers(0, high = 100, endpoint = True, size = 1)[0], rng.integers(0, high =  100, endpoint = True, size = 1)[0])
+		# run the simulation M times, this is usually enough to reach a minimum energy state
+		M = 500
+
+		for s in range(0, M):
+			#simulate the system, iterate over all nodes 
+			for i in range(0, g.nodes):
+				# for each vertice, first find the combined repellant force of all non adjacent vertices on each node
+				# vals of nodes which are adjacent to i
+				na = np.where(g.adj[i] == 0)[0]
+				index = np.argwhere(na==i)
+				naind = np.delete(na, index)
+				cum_repellent_force = np.array([0, 0])
+				# loop over all non-adjacent nodes 
+				for x in naind:
+					delta_x = cords[x][0] - cords[i][0]
+					delta_y = cords[x][1] - cords[i][1]
+
+					print('delta x', delta_x)
+					print('delta y', delta_y)
+					# first calculate the current euclidean distance between the two nodes
+					d = abs((delta_x**2 + delta_y**2) ** (1/2))
+					# get the magnitude of the repel force 
+					r = Visualise.repel_force(d)
+					print('repel force', r)
+					# get the direction of the repel force as an angle where 0 radians = 3 oclock
+					theta_radians = math.atan2(delta_y, delta_x)
+					# find the component vectors 
+					r_x, r_y = r * np.cos(theta_radians), r * np.sin(theta_radians)
+					print('rx ry', r_x, r_y)
+					# a baby crawls before it walks 
+					cum_repellent_force = np.add(cum_repellent_force, np.array([r_x, r_y]))
+					print('cum repellant force ', cum_repellent_force)
+
+				# secondly, find the cumulative attractive force with all adjacent 
+				aind = np.where(g.adj[i] == 1)[0]
+				cum_attr_force = np.array([0, 0])
+				# loop over all adjacent nodes 
+				for j in aind:
+					delta_x = cords[x][0] - cords[i][0]
+					delta_y = cords[x][1] - cords[i][1]
+					print('delta x', delta_x)
+					print('delta y', delta_y)
+					# first calculate the current euclidean distance between the two nodes
+					d = abs((delta_x**2 + delta_y**2) ** (1/2))
+					# get the magnitude of the spring force 
+					r = Visualise.spring_force(d)
+					print('force magnitude', r)
+					# get the direction of the spring force as an angle where 0 radians = 3 oclock
+					theta_radians = math.atan2(-1 * delta_y, -1 *  delta_x)
+					print('radians', theta_radians)
+					# find the component vectors 
+					s_x, s_y = r * np.cos(theta_radians), r * np.sin(theta_radians)
+					print('components', s_x, s_y)
+					# a baby crawls before it walks 
+					cum_attr_force = np.add(cum_attr_force, np.array([s_x, s_y]))
+				# then, find the net force of the repellant and attractive forces and move the node by this ammout
+				net_force = np.add(cum_repellent_force, cum_attr_force)
+				print('spring force ', cum_attr_force)
+				print('net force', net_force)
+				# update the coord based on the force
+				cords[x] = (cords[x][0] + Visualise.c4*net_force[0], cords[x][1] + Visualise.c4*net_force[1])
+
+		win = GraphWin(width = 800, height = 800) # create a window
+		# coords on x and y axis are between 0 and 100 
+		win.setCoords(0, 0, 120, 120) 
+
+		# then render edges 
+		ui =  np.triu_indices(g.nodes, k = 1)
+		for e in range(0, len(ui[0])):
+			if g.adj[ui[0][e], ui[1][e]] == 1:
+				l = Line(Point(cords[ui[0][e]][0], cords[ui[0][e]][1]), Point(cords[ui[1][e]][0], cords[ui[1][e]][1]))
+				l.draw(win)
+		# render nodes
+		for i in cords:
+			c = Circle(Point(cords[i][0], cords[i][1]), 100 / 25)	
+			message = Text(Point(cords[i][0], cords[i][1]), i)
+			message.draw(win)
+			c.draw(win) 
+		win.getMouse() # pause before closing
+
+
 
 class Generator:
 	#generates a symmetric binary tree
@@ -326,9 +430,8 @@ class Graph:
 		self.nodes = self.adj.shape[0]
 		self.degree = self.adj.sum(axis = 0)
 
-
-g = Generator.generate_er_graph(100, p = 0.1)
-Visualise.draw_spectral(g)
+g = Generator.generate_tree(4)
+Visualise.draw_force(g)
 print('egen centrality', g.eigenvector_centrality())
 print('has cycle : ', g.has_cycle())
 print('spanning trees : ', g.spanning_trees())
