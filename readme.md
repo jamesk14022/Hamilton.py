@@ -11,6 +11,7 @@ Everything is contained within hamilton.py
 - Watts–Strogatz 
 - Binary Trees
 - Complete Graphs
+- Cycle Graphs
 
 ### Layout Methods
 
