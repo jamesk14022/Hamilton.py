@@ -3,29 +3,26 @@ import math
 from graphics import *
 
 class Visualise:
-	c1 = 2
-	c2 = 1
-	c3 = 1000
-	c4 = 0.1
+	buffer = 1.05
+	window_height, window_width = 800, 800
 
-	# calculate the force on a vertex 
-	# use a logarithmic rather than linear scale
-	# returns the force
-	# where d is the distance between the two vertices
-	# it may be better to calculate d within the calculate method, let us wait and see
-	def spring_force(d):
-		if d == 0:
-			return 0
-		if d < Visualise.c2:
-			return 0
-		return Visualise.c1 * math.log(d / Visualise.c2, 10)
+	def render_graph(pos, g):
+		win = GraphWin(width = Visualise.window_width, height = Visualise.window_width) # create a window
+		# coords on x and y axis are between 0 and 100 
+		win.setCoords(np.amin(pos) * 1.1, np.amin(pos) * 1.1, np.amax(pos) * 1.1, np.amax(pos) * 1.1) 
 
-	# use an inverse square law for the inverse force
-	# returns the force  
-	def repel_force(d):
-		if d == 0:
-			return 0
-		return Visualise.c3 / (d**2)
+		circle_size = (np.amax(pos) * 1.1 + abs(np.amin(pos) * 1.1)) / 150 
+		# # then render edges 
+		ui = np.triu_indices(g.nodes, k = 1)
+		for e in range(0, len(ui[0])):
+			if g.adj[ui[0][e], ui[1][e]] == 1:
+				l = Line(Point(pos[ui[0][e],0], pos[ui[0][e], 1]), Point(pos[ui[1][e], 0], pos[ui[1][e], 1]))
+				l.draw(win)
+		# render nodes
+		for i in range(0, g.nodes):
+			c = Circle(Point(pos[i, 0], pos[i, 1]), circle_size)	
+			c.draw(win) 
+		win.getMouse() # pause before closing
 
 	# draw a graph using the spectral layout
 	# https://en.wikipedia.org/wiki/Spectral_layout
@@ -33,56 +30,34 @@ class Visualise:
 		np.set_printoptions(precision=3)
 		L = g.get_laplace()
 		eigenvalue, eigenvector = np.linalg.eig(L)
+
 		# returns the indices of the two smallest eigenvalues
 		minind = np.argsort(eigenvalue)[1 : 3]
 		xeig = eigenvector[:,minind[0]]
 		yeig = eigenvector[:,minind[1]]
-		cords = {}
-		# record max cords val to set the cord max in graphics
-		maxc = max(max(xeig), max(yeig))
-		minc = min(min(xeig), min(yeig))
-		# create dict of x, y tuples to hold co-ordinates for each vertice
-		for x in range(0, g.nodes):
-			cords[x] = (xeig[x], yeig[x])
-		win = GraphWin(width = 800, height = 800) # create a window
-		buffer = 1.05
-		win.setCoords(minc * buffer, minc * buffer, maxc * buffer, maxc * buffer) # set the coordinates of the window; bottom left is (0, 0) and top right is (10, 10)
-		# then add edges
-		ui =  np.triu_indices(g.nodes, k = 1)
-		for e in range(0, len(ui[0])):
-			if g.adj[ui[0][e], ui[1][e]] == 1:
-				l = Line(Point(cords[ui[0][e]][0], cords[ui[0][e]][1]), Point(cords[ui[1][e]][0], cords[ui[1][e]][1]))
-				l.draw(win)
-		# then, nodes
-		for i in cords:
-			c = Circle(Point(cords[i][0], cords[i][1]), maxc / 20)	
-			message = Text(Point(cords[i][0], cords[i][1]), i)
-			message.draw(win)
-			c.draw(win) 
-		win.getMouse() # pause before closing
 
+		# create pos to hold co-ordinates
+		pos = np.column_stack((xeig, yeig))
 
-	def fruchterman_reingold(A, fixed=None, iterations=50, threshold=1e-4, dim=2):
+		#render
+		Visualise.render_graph(pos, g)
 
+	# what does the threshold parameter here do?
+	def draw_fruchterman_reingold(g, fixed=None, iterations=50, threshold=1e-4, dim=2):
+		A = g.adj
 		nnodes, _ = A.shape
 
 		# random initial positions
 		pos = np.asarray(np.random.rand(nnodes, dim), dtype=A.dtype)
-
 		# optimal distance between nodes
 		k = np.sqrt(1.0 / nnodes)
-		# the initial "temperature"  is about .1 of domain area (=1x1)
 		# this is the largest step allowed in the dynamics.
 		# We need to calculate this in case our fixed positions force our domain
 		# to be much bigger than 1x1
 		t = max(max(pos.T[0]) - min(pos.T[0]), max(pos.T[1]) - min(pos.T[1])) * 0.1
-		# simple cooling scheme.
-		# linearly step down by dt on each iteration so last iteration is size dt.
+		# discretization of time
 		dt = t / float(iterations + 1)
 		delta = np.zeros((pos.shape[0], pos.shape[0], pos.shape[1]), dtype=A.dtype)
-		# the inscrutable (but fast) version
-		# this is still O(V^2)
-		# could use multilevel methods to speed this up significantly
 		for iteration in range(iterations):
 			# matrix of difference between points
 			delta = pos[:, np.newaxis, :] - pos[np.newaxis, :, :]
@@ -97,131 +72,20 @@ class Visualise:
 			# update positions
 			length = np.linalg.norm(displacement, axis=-1)
 			length = np.where(length < 0.01, 0.1, length)
+			# I don't quite understand this line, research
 			delta_pos = np.einsum("ij,i->ij", displacement, t / length)
 			if fixed is not None:
 				# don't change positions of fixed nodes
 				delta_pos[fixed] = 0.0
 			pos += delta_pos
-			# cool temperature
+			# time marching towards zero
 			t -= dt
 			err = np.linalg.norm(delta_pos) / nnodes
 			if err < threshold:
 				break
 
-
-		win = GraphWin(width = 800, height = 800) # create a window
-		# coords on x and y axis are between 0 and 100 
-		win.setCoords(np.amin(pos) * 1.1, np.amin(pos) * 1.1, np.amax(pos) * 1.1, np.amax(pos) * 1.1) 
-
-		# # then render edges 
-		ui = np.triu_indices(nnodes, k = 1)
-		for e in range(0, len(ui[0])):
-			if g.adj[ui[0][e], ui[1][e]] == 1:
-				l = Line(Point(pos[ui[0][e],0], pos[ui[0][e], 1]), Point(pos[ui[1][e], 0], pos[ui[1][e], 1]))
-				l.draw(win)
-		# render nodes
-		for i in range(0, nnodes):
-			c = Circle(Point(pos[i, 0], pos[i, 1]), 0.05)	
-			c.draw(win) 
-		win.getMouse() # pause before closing
-
-
-		return pos
-
-
-	# # # draw a graph on graphics.py with the force directed layout
-	# # # these can also be known as spring embedders
-	# # # hookes law like forces between adjacent nodes, except on a logarithmic rather than linear scale 
-	# # # we make non-adjacent vertices repel eachother with an inverse square law
-	# # # http://cs.brown.edu/people/rtamassi/gdhandbook/chapters/force-directed.pdf
-	# def draw_force(g):	
-	# 	# create dict of x, y tuples to hold co-ordinates for each vertice
-	# 	cords = {}
-	# 	# first give all nodes random locations in our coord space 
-	# 	for x in range(0, g.nodes):
-	# 		rng = np.random.default_rng()
-	# 		cords[x] = (rng.integers(0, high = 100, endpoint = True, size = 1)[0], rng.integers(0, high =  100, endpoint = True, size = 1)[0])
-	# 	# run the simulation M times, this is usually enough to reach a minimum energy state
-	# 	M = 100
-
-	# 	for s in range(0, M):
-	# 		print('cords ', cords)
-	# 		# #simulate the system, iterate over all nodes 
-	# 		for i in range(0, g.nodes):
-	# 			# for each vertice, first find the combined repellant force of all non adjacent vertices on each node
-	# 			# vals of nodes which are adjacent to i
-	# 			na = np.array(range(0, g.nodes))
-	# 			index = np.argwhere(na==i)
-	# 			naind = np.delete(na, index)
-	# 			print('naind for ', i,  naind)
-	# 			cum_repellent_force = np.array([0, 0])
-	# 			# loop over all non-adjacent nodes 
-	# 			for x in naind:
-	# 				delta_x = cords[x][0] - cords[i][0]
-	# 				delta_y = cords[x][1] - cords[i][1]
-
-	# 				# print('delta x', delta_x)
-	# 				# print('delta y', delta_y)
-	# 				# first calculate the current euclidean distance between the two nodes
-	# 				d = abs((delta_x**2 + delta_y**2) ** (1/2))
-	# 		# 		# get the magnitude of the repel force 
-	# 				r = Visualise.repel_force(d)
-	# 		# 		# get the direction of the repel force as an angle where 0 radians = 3 oclock
-	# 				theta_radians = (math.atan2(delta_y, delta_x) - math.pi) % (2 * math.pi) 
-	# 		# 		# find the component vectors 
-	# 				r_x, r_y = -1 * r * np.cos(theta_radians), -1 * r * np.sin(theta_radians)
-	# 		# 		# print('rx ry', r_x, r_y)
-	# 		# 		# a baby crawls before it walks 
-	# 				cum_repellent_force = np.add(cum_repellent_force, np.array([r_x, r_y]))
-
-	# 			# secondly, find the cumulative attractive force with all adjacent 
-	# 			aind = np.where(g.adj[i] == 1)[0]
-	# 			cum_attr_force = np.array([0, 0])
-	# 			# loop over all adjacent nodes 
-	# 			#print(' adj indices for ', i, aind)
-	# 			for j in aind:
-	# 				delta_x = cords[j][0] - cords[i][0]
-	# 				delta_y = cords[j][1] - cords[i][1]
-
-	# 				# first calculate the current euclidean distance between the two nodes
-	# 				d = abs((delta_x**2 + delta_y**2) ** (1/2))
-	# 				# get the magnitude of the spring force 
-	# 				r = Visualise.spring_force(d)
-	# 				# get the direction of the spring force as an angle where 0 radians = 3 oclock
-	# 				theta_radians = math.atan2(delta_y, delta_x)
-	# 				#print('radians', theta_radians)
-	# 				# find the component vectors 
-	# 				s_x, s_y = r * np.cos(theta_radians), r * np.sin(theta_radians)
-	# 				#print('components', s_x, s_y)
-	# 				# a baby crawls before it walks 
-	# 				cum_attr_force = np.add(cum_attr_force, np.array([s_x, s_y]))
-	# 			# then, find the net force of the repellant and attractive forces and move the node by this ammout
-	# 			net_force = np.add(cum_repellent_force, cum_attr_force)
-	# 			print('cum repellant force ', cum_repellent_force)
-	# 			print('cum spring force ', cum_attr_force)
-	# 			print('net force', net_force)
-	# 			# update the coord based on the force
-	# 			cords[x] = (cords[x][0] + Visualise.c4*net_force[0], cords[x][1] + Visualise.c4*net_force[1])
-
-	# 	win = GraphWin(width = 800, height = 800) # create a window
-	# 	# coords on x and y axis are between 0 and 100 
-	# 	win.setCoords(-150, -150, 150, 150) 
-
-	# 	# then render edges 
-	# 	ui =  np.triu_indices(g.nodes, k = 1)
-	# 	for e in range(0, len(ui[0])):
-	# 		if g.adj[ui[0][e], ui[1][e]] == 1:
-	# 			l = Line(Point(cords[ui[0][e]][0], cords[ui[0][e]][1]), Point(cords[ui[1][e]][0], cords[ui[1][e]][1]))
-	# 			l.draw(win)
-	# 	# render nodes
-	# 	for i in cords:
-	# 		c = Circle(Point(cords[i][0], cords[i][1]), 40)	
-	# 		message = Text(Point(cords[i][0], cords[i][1]), i)
-	# 		message.draw(win)
-	# 		c.draw(win) 
-	# 	win.getMouse() # pause before closing
-
-
+		#render
+		Visualise.render_graph(pos, g)
 
 class Generator:
 	#generates a symmetric binary tree
@@ -284,13 +148,14 @@ class Generator:
 	# the mean degree k is assumed to be an even integer
 	# b must be between 0 and 1 inclusive 
 	# need to verify that this method is correct 
-	def generate_watts_strogatz(n, k = 4, b = 1):
+	def generate_watts_strogatz(n, k = 4, b = 0.5):
 		g = Generator.generate_cycle(n)
 		# adding extra edges to the latice
 		if k > 2:	
 			for x in range(0, n):
 				# no error will be thrown if we add mulitple edges, it will remain a single edge
-				# number of edges to be added on each side of each node (minus 1 as we have already crated the cycle)
+				# number of edges to be added on each side of each node
+				#  (minus 1 as we have already crated the cycle)
 				edg = int(k / 2) - 1
 				for i in range(0, edg):
 					# determine which other node to add the edge to
@@ -325,9 +190,10 @@ class Generator:
 						poss = list(filter(lambda x: x not in icd, nodes))
 						# probability of choosing any of the k new edges
 						prob = [1 / len(poss)] * len(poss)
-						g.add_edge((x, np.random.choice(poss, 1, p = prob)))
+						# choosing which edge to add 
+						e_add = np.random.choice(poss, 1, p = prob)[0]
+						g.add_edge((x, e_add))
 		return g
-
 
 	def generate_complete(n):
 		g = Graph(n)
@@ -350,7 +216,6 @@ class Generator:
 # node label start at zero, they are the same indexes 
 class Graph:
 	def __init__(self, size, names = None):	
-		# node names stored as a dictionary, relating a node name #dict key to a node index # dict value
 		self.node_names = {}
 		if names is None:
 			self.custom_node_names = False
@@ -516,7 +381,8 @@ class Graph:
 		# calculate number of closed triplets (or 3 times triangles)
 		cldtrip = (np.trace(np.linalg.matrix_power(self.adj, 3))) / 2
 		#calculate total number of triplets, total number of triplets (both open and closed).
-		triples = ((np.linalg.matrix_power(self.adj, 2)).sum() - np.trace(np.linalg.matrix_power(self.adj, 2))) / 2 
+		triples = ((np.linalg.matrix_power(self.adj, 2)).sum()
+		            - np.trace(np.linalg.matrix_power(self.adj, 2))) / 2 
 		return cldtrip / triples
 
 	def is_regular(self):
@@ -561,5 +427,4 @@ print('this graph is regular : ', g.is_regular())
 print('the degrees of nodes are ', g.degree)
 print('connected ', g.is_connected(0))
 print('naming dict,', g.node_names)
-
-print('fruchterman_reingold is', Visualise.fruchterman_reingold(g.adj))
+Visualise.draw_fruchterman_reingold(g)
