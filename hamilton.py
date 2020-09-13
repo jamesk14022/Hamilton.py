@@ -89,6 +89,7 @@ class Visualise:
 
 class Generator:
 	#generates a symmetric binary tree
+	# I should probably make this name more specific
 	def generate_tree(depth):
 		g = Graph(0)
 		for x in range(0, depth):
@@ -382,7 +383,7 @@ class Graph:
 		cldtrip = (np.trace(np.linalg.matrix_power(self.adj, 3))) / 2
 		#calculate total number of triplets, total number of triplets (both open and closed).
 		triples = ((np.linalg.matrix_power(self.adj, 2)).sum()
-		            - np.trace(np.linalg.matrix_power(self.adj, 2))) / 2 
+					- np.trace(np.linalg.matrix_power(self.adj, 2))) / 2 
 		return cldtrip / triples
 
 	def is_regular(self):
