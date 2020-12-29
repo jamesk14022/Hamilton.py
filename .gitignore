@@ -1,3 +1,4 @@
 *.swp
 force.py
 __pycache__
+src/__pycache__

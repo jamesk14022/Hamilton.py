@@ -1,6 +1,12 @@
 import unittest
 import networkx as nx
-from hamilton import Graph, Generator
+import math
+import sys
+
+sys.path.insert(0, '../src/')
+import generator as gen
+import hamilton as ham
+import attributes as att
 
 # this is the python class inheritance syntax 
 class TestGraphs(unittest.TestCase):
@@ -10,10 +16,10 @@ class TestGraphs(unittest.TestCase):
     def setUp(self):
         return 
 
-graphs = {'tree': [Generator.generate_tree(5), nx.generators.classic.full_rary_tree(2, 31)],
-          'cycle': [Generator.generate_cycle(20), nx.generators.classic.cycle_graph(20)],
-          'complete': [Generator.generate_complete(30), nx.generators.classic.complete_graph(30)],
-          'custom': [ Graph(4), nx.Graph()]
+graphs = {'tree': [gen.Generator.tree(5), nx.generators.classic.full_rary_tree(2, 31)],
+          'cycle': [gen.Generator.cycle(20), nx.generators.classic.cycle_graph(20)],
+          'complete': [gen.Generator.complete(30), nx.generators.classic.complete_graph(30)],
+          'custom': [ ham.UndirectedGraph(4), nx.Graph()]
           }
 
 graphs['custom'][0].add_edge((0, 1))
@@ -41,12 +47,14 @@ def create_edges(h, n):
 
 def create_aand(h, n):
     def aand(self):
-        self.assertEqual(h.get_aand(), nx.average_neighbor_degree(n))
+        self.assertEqual(att.aand(h), nx.average_neighbor_degree(n))
     return aand
 
 def create_eig(h, n):
     def eig_cent(self):
-        self.assertEqual(h.eigenvector_centrality().tolist(), list(nx.eigenvector_centrality(n).values()))
+        heig = [round(x, 3) for x in att.eigenvector_centrality(h).tolist()]
+        neig = [round(x, 3) for x in list(nx.eigenvector_centrality(n).values())]
+        self.assertCountEqual(heig, neig)
     return eig_cent
 
 def create_cycle(h, n):
@@ -54,33 +62,33 @@ def create_cycle(h, n):
         # does nx think a cycle exists 
         try:
             cycle = nx.algorithms.cycles.find_cycle(n)
-            self.assertTrue(h.spanning_trees() > 0)
+            self.assertTrue(att.spanning_trees(h) > 0)
         except nx.exception.NetworkXNoCycle:
-            self.assertTrue(h.spanning_trees() == 0)
+            self.assertTrue(att.spanning_trees(h) == 0)
     return cycle
 
 def create_connected(h, n):
     def connected(self):
         if nx.algorithms.components.is_connected(n):
-            self.assertTrue(h.is_connected(0))
+            self.assertTrue(att.is_connected(h))
         else: 
-            self.assertFalse(h.is_connected(0))
+            self.assertFalse(att.is_connected(h))
     return connected
 
 def create_bipartite(h, n):
     def bipartite(self):
         if nx.algorithms.bipartite.is_bipartite(n):
-            self.assertTrue(h.is_bipartite())
+            self.assertTrue(att.is_bipartite(h))
         else:
-            self.assertFalse(h.is_bipartite())
+            self.assertFalse(att.is_bipartite(h))
     return bipartite
 
 def create_regular(h, n):
     def regular(self):
         if nx.algorithms.regular.is_regular(n):
-            self.assertTrue(h.is_regular())
+            self.assertTrue(att.is_regular(h))
         else:
-            self.assertFalse(h.is_regular())
+            self.assertFalse(att.is_regular(h))
     return regular
 
 for i, (k, v) in enumerate(graphs.items()):
